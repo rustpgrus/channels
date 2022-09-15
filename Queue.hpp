@@ -23,7 +23,9 @@ public:
     return value;
   }
 
-  auto IsEmpty() const { return m_queue.empty(); }
+  auto Size() const -> size_t { return m_queue.size(); }
+
+  auto IsEmpty() const -> bool { return m_queue.empty(); }
 
 private:
   std::queue<value_type> m_queue;

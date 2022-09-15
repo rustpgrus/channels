@@ -24,11 +24,14 @@ struct sheduler_default {
 template <typename TypeValue, typename Sheduler = sheduler_default>
 class Channel {
 public:
+  explicit Channel(size_t maxCapacity = 1) : m_maxCapacity(maxCapacity) {}
+  ~Channel() = default;
+
   struct ChannelInput {
     using value_type = TypeValue;
 
     auto await_ready() noexcept -> bool {
-      return m_pChannel->m_DataQueue.IsEmpty();
+      return m_pChannel->m_DataQueue.Size() < m_pChannel->m_maxCapacity;
     }
     auto await_suspend(CoroHandler h) -> void {
       m_pChannel->m_InQueue.Put(std::move(h));
@@ -115,6 +118,7 @@ public:
 private:
   using CoroHandlerVariant = std::variant<CoroHandler, CoroHandlerPtr>;
 
+  size_t m_maxCapacity;
   Queue<TypeValue> m_DataQueue;
   Queue<CoroHandler> m_InQueue;
   Queue<CoroHandlerVariant> m_OutQueue;
