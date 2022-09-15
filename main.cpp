@@ -1,6 +1,7 @@
 #include <coro/coro.hpp>
 #include <iostream>
 
+#include "Common.hpp"
 #include "Select.hpp"
 
 template <typename T> using Chan = core::Channel<T>;
@@ -18,11 +19,6 @@ auto producer_int(Chan<int>::ChannelInput in) -> coro::task<void> {
   co_await in << 4;
 }
 
-template <typename... Fs> struct overloaded : Fs... {
-  using Fs::operator()...;
-};
-
-template <typename... Fs> overloaded(Fs...) -> overloaded<Fs...>;
 
 auto consumer(Chan<std::string>::ChannelOutput out_s,
               Chan<int>::ChannelOutput out_i) -> coro::task<void> {

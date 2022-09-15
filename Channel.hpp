@@ -4,6 +4,7 @@
 #include <memory>
 #include <variant>
 
+#include "Common.hpp"
 #include "Queue.hpp"
 
 namespace core {
@@ -11,8 +12,17 @@ namespace core {
 using container::Queue;
 
 using CoroHandler = std::coroutine_handle<>;
+using CoroHandlerPtr = std::weak_ptr<CoroHandler>;
 
-template <typename TypeValue> class Channel {
+struct sheduler_default {
+  static void post(std::function<void()> f) {
+    if (f)
+      f();
+  }
+};
+
+template <typename TypeValue, typename Sheduler = sheduler_default>
+class Channel {
 public:
   struct ChannelInput {
     using value_type = TypeValue;
@@ -31,16 +41,19 @@ public:
         auto operator<<(TypeValue value) -> void {
           m_pChannel->m_DataQueue.Put(std::move(value));
           while (not m_pChannel->m_OutQueue.IsEmpty()) {
-            auto result = m_pChannel->m_OutQueue.Take();
-            if (auto ptr = std::get_if<CoroHandler>(&result); ptr) {
-              ptr->resume();
-            } else if (auto ptr =
-                           std::get<std::weak_ptr<CoroHandler>>(result).lock();
-                       ptr) {
-              auto coro = *ptr;
-              ptr = nullptr;
-              coro.resume();
-            }
+            std::visit(overloaded{[](CoroHandler handle) {
+                                    Sheduler::post(
+                                        [coro = std::move(handle)]() {
+                                          coro.resume();
+                                        });
+                                  },
+                                  [](CoroHandlerPtr ptrHandle) {
+                                    auto shared_handle = ptrHandle.lock();
+                                    auto coro = *shared_handle;
+                                    shared_handle = nullptr;
+                                    Sheduler::post([coro] { coro.resume(); });
+                                  }},
+                       m_pChannel->m_OutQueue.Take());
           }
         }
 
@@ -82,7 +95,9 @@ public:
     auto await_resume() -> TypeValue {
       auto data = std::move(m_pChannel->m_DataQueue.Take());
       if (not m_pChannel->m_InQueue.IsEmpty()) {
-        m_pChannel->m_InQueue.Take().resume();
+        Sheduler::post([coro = std::move(m_pChannel->m_InQueue.Take())] {
+          coro.resume();
+        });
       }
       return data;
     }
@@ -98,10 +113,11 @@ public:
   operator ChannelOutput() { return ChannelOutput{this}; }
 
 private:
+  using CoroHandlerVariant = std::variant<CoroHandler, CoroHandlerPtr>;
+
   Queue<TypeValue> m_DataQueue;
   Queue<CoroHandler> m_InQueue;
-  using PCoroHandler = std::weak_ptr<CoroHandler>;
-  Queue<std::variant<PCoroHandler, CoroHandler>> m_OutQueue;
+  Queue<CoroHandlerVariant> m_OutQueue;
 };
 
 } // namespace core
